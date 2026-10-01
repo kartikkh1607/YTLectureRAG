@@ -122,6 +122,8 @@ def stats():
         "collection": collection_name(),
         "chunks": count_points(),
         "rewrite": config.QUERY_REWRITE,
+        # Sirf boolean — "key Vercel tak pahunchi ya nahi" debug karne ke liye. Value kabhi nahi.
+        "groq_key_set": bool(config.GROQ_API_KEY),
         **_library(),
     }
 

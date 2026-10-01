@@ -17,6 +17,7 @@ Disk cache (data/rewrite_cache.json) kyun:
 import hashlib
 import json
 import os
+import sys
 import threading
 
 from ytrag.config import REWRITE_MODEL, WRITABLE_DIR
@@ -85,10 +86,26 @@ def _call_llm(question: str) -> str | None:
             reasoning_effort="low",
         )
         text = (response.choices[0].message.content or "").strip()
-    except Exception:
+        finish = response.choices[0].finish_reason
+    except Exception as exc:
+        # Fallback chupchaap tha -> production me rewrite band hua aur kisi ko pata
+        # nahi chala (M9 bug). stderr = Vercel runtime logs. Sirf exception ka
+        # type + message (200 chars) — API key ya headers kabhi log mat karo.
+        print(
+            f"[rewrite] LLM call failed: {type(exc).__name__}: {str(exc)[:200]}",
+            file=sys.stderr,
+            flush=True,
+        )
         return None
     # Sanity: khaali ya bahut lamba (model ne explanation likh di) -> bekaar
     if not text or len(text.split()) > 25:
+        # finish_reason="length" = reasoning ne token budget kha liya, answer aaya hi nahi.
+        print(
+            f"[rewrite] output rejected: {'empty' if not text else 'too long'} "
+            f"(words={len(text.split())}, finish_reason={finish})",
+            file=sys.stderr,
+            flush=True,
+        )
         return None
     return text.splitlines()[0].strip().strip('"')
 
