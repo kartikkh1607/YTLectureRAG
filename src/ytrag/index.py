@@ -1,12 +1,12 @@
-"""Qdrant: collection banana, chunks upsert karna, stats.
+"""Qdrant: collection banana, chunks upsert karna, search, stats.
 
 Day14/15 jaisa hi client, par do farak jo scale pe matter karte hain:
   1. collection ke naam me embedding dim (model switch = naya collection)
   2. point ID = uuid5(chunk_id) -> re-run overwrite karta hai, duplicate nahi
-(Search M5 me aayega.)
 """
 
 import atexit
+import re
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -19,7 +19,16 @@ from qdrant_client.models import (
     VectorParams,
 )
 
-from ytrag.config import COLLECTION, QDRANT_API_KEY, QDRANT_PATH, QDRANT_URL, UPSERT_BATCH
+from ytrag.config import (
+    COLLECTION,
+    MAX_DISTANCE,
+    QDRANT_API_KEY,
+    QDRANT_PATH,
+    QDRANT_URL,
+    TITLE_BOOST,
+    TOP_K,
+    UPSERT_BATCH,
+)
 from ytrag.embed import get_embedder
 from ytrag.models import Chunk
 
@@ -165,3 +174,92 @@ def count_points() -> int:
     if not client.collection_exists(name):
         return 0
     return client.count(collection_name=name, exact=True).count
+
+
+# ------------------------------------------------------------------
+# Search
+# ------------------------------------------------------------------
+# Ye words topic ke baare me kuch nahi batate: Hinglish sawaal ka dhancha
+# ("kaise", "kya hai") + har title me aane wala boilerplate ("DSA", "Patterns").
+# Inhe match karne do toh har lecture ko boost mil jaayega — boost bekaar.
+_STOP = {
+    "kaise", "kya", "hai", "hain", "me", "ka", "ki", "ke", "aur", "kab", "karte",
+    "karna", "hota", "nikale", "solve", "kare", "chahiye", "use", "kahan", "se",
+    "ko", "pehchane", "difference", "farak", "the", "a", "is", "in", "what", "how",
+    "do", "to", "of", "for", "video", "dsa", "patterns", "pattern", "episode",
+    "leetcode", "interview", "questions", "question", "master", "best", "explained",
+}
+
+
+def _stem(word: str) -> str:
+    """Kaccha plural hataana: 'hashmaps' -> 'hashmap', 'heaps' -> 'heap'.
+
+    len > 4 ki shart: 'bfs' ya 'dfs' ka 's' mat kaato.
+    """
+    for suffix in ("es", "s"):
+        if len(word) > 4 and word.endswith(suffix):
+            return word[: -len(suffix)]
+    return word
+
+
+def _terms(text: str) -> set[str]:
+    """Text -> meaningful words ka set (lowercase, stop words hatake, stemmed)."""
+    return {
+        _stem(w)
+        for w in re.findall(r"[a-z0-9]+", text.lower())
+        if w not in _STOP and len(w) > 2
+    }
+
+
+def title_overlap(query: str, title: str) -> int:
+    """Query ke kitne meaningful words lecture title me bhi hain. (set intersection)"""
+    return len(_terms(query) & _terms(title))
+
+
+def search(
+    query: str,
+    top_k: int = TOP_K,
+    video_id: str | None = None,
+    max_distance: float | None = None,
+) -> list[tuple[Chunk, float]]:
+    """[(chunk, distance)] best-first, cutoff ke baad.
+
+    3 steps: over-fetch -> distance cutoff -> title boost se re-rank.
+    """
+    name = ensure_collection()
+    client = get_client()
+    vector = get_embedder().embed_query(query)
+
+    # Day 15 wala filter — "sirf is lecture me dhundo" (UI me kaam aayega)
+    query_filter = None
+    if video_id:
+        query_filter = Filter(
+            must=[FieldCondition(key="video_id", match=MatchValue(value=video_id))]
+        )
+
+    # OVER-FETCH: top_k ki jagah 4x maango. Vector search recall ke liye theek
+    # hai par "pehla kaun" ka judge kharab. Re-rank ko choose karne ke liye
+    # zyada candidates chahiye — warna jo 7th pe tha woh kabhi 1st nahi ban sakta.
+    results = client.query_points(
+        collection_name=name,
+        query=vector,
+        limit=max(top_k * 4, 20),
+        with_payload=True,
+        query_filter=query_filter,
+    ).points
+
+    cutoff = MAX_DISTANCE if max_distance is None else max_distance
+    scored: list[tuple[float, float, Chunk]] = []
+    for point in results:
+        # Qdrant similarity deta hai (zyada = better). Baaki system distance
+        # me sochta hai (kam = better). Conversion sirf yahan, ek baar.
+        distance = 1.0 - float(point.score)
+        if distance > cutoff:
+            continue  # cutoff RAW distance pe — boost se koi bura chunk andar nahi aa sakta
+        chunk = Chunk.from_payload(point.payload)
+        overlap = title_overlap(query, chunk.video_title)
+        # (sort key, asli distance, chunk). Sort boosted pe, report asli.
+        scored.append((distance - TITLE_BOOST * overlap, distance, chunk))
+
+    scored.sort(key=lambda row: row[0])
+    return [(chunk, distance) for _, distance, chunk in scored[:top_k]]

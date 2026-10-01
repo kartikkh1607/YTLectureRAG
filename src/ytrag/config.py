@@ -73,3 +73,23 @@ QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
 # Final naam me embedding dim juddega: "dsa_lectures_384"
 COLLECTION = os.getenv("YTRAG_COLLECTION", "dsa_lectures")
 UPSERT_BATCH = int(os.getenv("YTRAG_UPSERT_BATCH", "128"))
+
+
+
+# ------------------------------------------------------------------
+# Retrieval
+# ------------------------------------------------------------------
+TOP_K = int(os.getenv("YTRAG_TOP_K", "6"))
+# Cosine distance = 1 - similarity. Isse door wale results LLM tak nahi jaate.
+#
+# 0.60 original ka measured value hai (20 genuine + 10 off-topic sawaal, poore
+# index pe). Dono populations OVERLAP karti hain: sabse kharab genuine sawaal
+# ("number of islands") 0.568, sabse achha off-topic ("backprop") 0.409.
+# 0.50 karne pe "hashmap kab use karna chahiye" jaise asli sawaal refuse hue.
+# Toh ye coarse pre-filter hai, asli guard nahi — semantic judgement M6 me LLM karega.
+MAX_DISTANCE = float(os.getenv("YTRAG_MAX_DISTANCE", "0.6"))
+# Isse kam distance = solid match, UI "confident" dikhayega (M8).
+CONFIDENT_DISTANCE = float(os.getenv("YTRAG_CONFIDENT_DISTANCE", "0.45"))
+# Query ka har meaningful word jo lecture TITLE me bhi hai -> distance me se
+# itna minus. Measured: top-1 accuracy 9/12 -> 12/12. 0 = band.
+TITLE_BOOST = float(os.getenv("YTRAG_TITLE_BOOST", "0.06"))
