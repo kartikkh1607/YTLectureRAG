@@ -16,7 +16,9 @@ console = Console()
 @app.command()
 def reindex(
     replace: bool = typer.Option(
-        False, "--replace", help="Har video ke purane chunks pehle delete karo (chunk size badla ho tab)."
+        False,
+        "--replace",
+        help="Har video ke purane chunks pehle delete karo (chunk size badla ho tab).",
     ),
 ):
     """Cached transcripts se re-chunk + re-embed. Kabhi re-transcribe nahi karta."""
@@ -34,7 +36,9 @@ def reindex(
         console.print("[red]Koi transcript nahi mila data/transcripts me.[/red]")
         raise typer.Exit(1)
 
-    console.print(f"Reindexing {len(ids)} transcripts -> [bold]{collection_name()}[/bold]")
+    console.print(
+        f"Reindexing {len(ids)} transcripts -> [bold]{collection_name()}[/bold]"
+    )
     t0 = time.perf_counter()
     total = skipped = 0
     with console.status("embedding...") as status:
@@ -45,7 +49,9 @@ def reindex(
                 continue
             if replace:
                 delete_video(vid)
-            chunks = chunk_segments(video_from_transcript(data), segments_from_transcript(data))
+            chunks = chunk_segments(
+                video_from_transcript(data), segments_from_transcript(data)
+            )
             total += upsert_chunks(chunks)
             status.update(f"embedding... {n}/{len(ids)} videos, {total} chunks")
 
@@ -59,7 +65,9 @@ def reindex(
 def search(
     query: str = typer.Argument(..., help="Sawaal, Hinglish ya English"),
     top_k: int = typer.Option(6, "--top-k", "-k"),
-    raw: bool = typer.Option(False, "--raw", help="MAX_DISTANCE cutoff band — sab dikhao."),
+    raw: bool = typer.Option(
+        False, "--raw", help="MAX_DISTANCE cutoff band — sab dikhao."
+    ),
 ):
     """Sirf retrieval, LLM nahi. Distances dekh ke cutoff tune karne ke liye."""
     from ytrag.config import MAX_DISTANCE
@@ -68,7 +76,9 @@ def search(
 
     hits = do_search(query, top_k=top_k, max_distance=2.0 if raw else None)
     if not hits:
-        console.print(f"[yellow]Kuch nahi mila (cutoff {MAX_DISTANCE}). --raw try karo.[/yellow]")
+        console.print(
+            f"[yellow]Kuch nahi mila (cutoff {MAX_DISTANCE}). --raw try karo.[/yellow]"
+        )
         return
 
     table = Table(title=f"{query!r}  (cutoff: {'off' if raw else MAX_DISTANCE})")
@@ -103,9 +113,10 @@ def stats():
     console.print(f"Embed model  : {EMBED_MODEL}")
     console.print(f"Collection   : {collection_name()}")
     console.print(f"Points       : {count_points()}")
-    console.print(f"Videos       : {len(indexed_video_ids())} indexed / {len(cached_video_ids())} transcripts")
+    console.print(
+        f"Videos       : {len(indexed_video_ids())} indexed / {len(cached_video_ids())} transcripts"
+    )
 
-    
 
 @app.command()
 def ask(
@@ -125,10 +136,85 @@ def ask(
     console.print(f"\n[{color}]{escape(result['answer'])}[/{color}]\n")
 
     for i, c in enumerate(result["citations"], start=1):
-        console.print(f"  [{i}] [link={c['url']}]{c['timestamp']}[/link]  {c['title'][:60]}  (dist {c['distance']})")
+        console.print(
+            f"  [{i}] [link={c['url']}]{c['timestamp']}[/link]  {c['title'][:60]}  (dist {c['distance']})"
+        )
 
     # Debug line: retrieval ne kitna diya, model ne kitna use kiya
     console.print(
         f"\n[dim]retrieved {result['retrieved']} | cited {len(result['citations'])} "
         f"| grounded {result['grounded']}[/dim]"
     )
+
+
+@app.command()
+def find(
+    keyword: str = typer.Argument(..., help="Exact word/phrase, transcripts me grep"),
+    limit: int = typer.Option(15, "--limit", "-n"),
+):
+    """Transcripts me plain keyword search — golden set likhne ke liye.
+
+    Embeddings use NAHI karta, jaan-boojh ke. Golden set ka "sahi jawab" system
+    ke apne search se nikaloge toh eval khud ko hi grade karega (circular).
+    """
+    from ytrag.models import format_timestamp
+    from ytrag.transcribe import cached_video_ids, load_transcript
+
+    kw = keyword.lower()
+    shown = 0
+    for vid in cached_video_ids():
+        data = load_transcript(vid)
+        if not data:
+            continue
+        for s in data["segments"]:
+            if kw in s["text"].lower():
+                start = int(s["start"])
+                console.print(
+                    f"[cyan]{vid}[/cyan] {start:>5}s ({format_timestamp(start)})  "
+                    f"{data['title'][:50]}"
+                )
+                shown += 1
+                if shown >= limit:
+                    return
+    if shown == 0:
+        console.print(f"[yellow]'{keyword}' kisi transcript me nahi mila.[/yellow]")
+
+
+@app.command(name="eval")  # "eval" Python ka built-in hai, isliye function ka naam alag
+def eval_cmd(
+    k: int = typer.Option(5, "-k"),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Har entry dikhao, sirf misses nahi."
+    ),
+):
+    """Golden set pe retrieval + refusal score."""
+    from ytrag.evaluate import run_eval
+
+    s = run_eval(k=k)
+    for r in s["results"]:
+        if not verbose and r["hit"]:
+            continue
+        mark = "[green]PASS[/green]" if r["hit"] else "[red]MISS[/red]"
+        if r["kind"] == "retrieval":
+            extra = f"rank={r['rank']} top_dist={r['top_dist']}" + (
+                " [red]CUT[/red]" if r["cut"] else ""
+            )
+            console.print(f"{mark} {r['q']}  ({extra})")
+            if not r["hit"]:
+                for g in r["got"]:
+                    console.print(f"       got: {g}")
+        else:
+            console.print(
+                f"{mark} {r['q']}  (refusal via {r['how']}, retrieved {r['retrieved']})"
+            )
+
+    console.print(f"\n[bold]k={s['k']}  MAX_DISTANCE={s['max_distance']}[/bold]")
+    if "retrieval" in s:
+        m = s["retrieval"]
+        console.print(
+            f"Retrieval ({m['n']}): hit@{k} {m[f'hit@{k}']:.0%} | top1 {m['top1']:.0%} | "
+            f"MRR {m['mrr']:.2f} | video_hit {m['video_hit']:.0%} | cut by cutoff: {m['cut_by_cutoff']}"
+        )
+    if "refusal" in s:
+        m = s["refusal"]
+        console.print(f"Refusal   ({m['n']}): {m['rate']:.0%}")
