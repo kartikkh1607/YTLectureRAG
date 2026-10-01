@@ -48,7 +48,6 @@ MIN_CHUNK_WORDS = int(os.getenv("YTRAG_MIN_CHUNK_WORDS", "15"))
 # pehle shuru hota hai. Citation link 5 sec peeche se chalega.
 LINK_REWIND_SECONDS = int(os.getenv("YTRAG_LINK_REWIND", "5"))
 
-
 # ------------------------------------------------------------------
 # Embeddings
 # ------------------------------------------------------------------
@@ -74,8 +73,6 @@ QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
 COLLECTION = os.getenv("YTRAG_COLLECTION", "dsa_lectures")
 UPSERT_BATCH = int(os.getenv("YTRAG_UPSERT_BATCH", "128"))
 
-
-
 # ------------------------------------------------------------------
 # Retrieval
 # ------------------------------------------------------------------
@@ -94,7 +91,6 @@ CONFIDENT_DISTANCE = float(os.getenv("YTRAG_CONFIDENT_DISTANCE", "0.45"))
 # itna minus. Measured: top-1 accuracy 9/12 -> 12/12. 0 = band.
 TITLE_BOOST = float(os.getenv("YTRAG_TITLE_BOOST", "0.06"))
 
-
 # ------------------------------------------------------------------
 # LLM (Groq)
 # ------------------------------------------------------------------
@@ -108,3 +104,20 @@ GROQ_MAX_TOKENS = int(os.getenv("YTRAG_GROQ_MAX_TOKENS", "4096"))
 # Exact string jo system bolta hai jab answer lectures me nahi hai.
 # Ek jagah define — answer.py, eval aur frontend teeno isi se match karte hain.
 REFUSAL = "Ye topic in lectures me cover nahi hua."
+
+# ------------------------------------------------------------------
+# Query rewriting
+# ------------------------------------------------------------------
+# Hinglish sawaal -> English DSA search query, embed karne se PEHLE.
+# Wajah (M7 eval): MiniLM English-only hai; Hinglish words bhasha se match
+# karte hain, topic se nahi.
+#
+# Measured (20 retrieval + 8 refusal golden set):
+#   OFF: hit@5 ~65%, MRR ~0.59, off-topic jo cutoff ne roke: 1/8
+#   ON : hit@5  90%, MRR  0.72, off-topic jo cutoff ne roke: 5/8
+# Isliye default ON. Trade-off: har search pe ek LLM call (~0.5-1s + quota).
+# Groq fail ho toh rewrite.py original query se search karta hai.
+# Band karna ho: YTRAG_QUERY_REWRITE=0
+QUERY_REWRITE = os.getenv("YTRAG_QUERY_REWRITE", "1") == "1"
+# Chhota/tez model kaafi hai: ek line rewrite karni hai, sochna kam.
+REWRITE_MODEL = os.getenv("YTRAG_REWRITE_MODEL", "openai/gpt-oss-20b")

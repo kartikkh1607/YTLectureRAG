@@ -25,6 +25,7 @@ from ytrag.config import (
     QDRANT_API_KEY,
     QDRANT_PATH,
     QDRANT_URL,
+    QUERY_REWRITE,
     TITLE_BOOST,
     TOP_K,
     UPSERT_BATCH,
@@ -221,11 +222,20 @@ def search(
     top_k: int = TOP_K,
     video_id: str | None = None,
     max_distance: float | None = None,
+    rewrite: bool | None = None,
 ) -> list[tuple[Chunk, float]]:
     """[(chunk, distance)] best-first, cutoff ke baad.
 
-    3 steps: over-fetch -> distance cutoff -> title boost se re-rank.
+    Steps: (optional rewrite) -> over-fetch -> distance cutoff -> title boost se re-rank.
     """
+    # rewrite=None -> config ka default. CLI/eval explicitly True/False de sakte hain.
+    if QUERY_REWRITE if rewrite is None else rewrite:
+        from ytrag.rewrite import rewrite_query
+
+        # Aage SAB kuch (embedding + title boost) rewritten query pe.
+        # "house robber" rewrite me aaya -> title boost bhi milega.
+        query = rewrite_query(query)
+
     name = ensure_collection()
     client = get_client()
     vector = get_embedder().embed_query(query)
