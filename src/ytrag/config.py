@@ -26,10 +26,20 @@ DATA_DIR = Path(os.getenv("YTRAG_DATA_DIR", PROJECT_ROOT / "data"))
 # Precious vs disposable split:
 #   transcripts/ -> ghanton ka GPU time, git me commit hota hai
 #   audio/       -> kabhi bhi dobara download, gitignored
-#   qdrant/      -> transcripts se reindex karke minutes me ban jaata hai
+#   qdrant/      -> transcripts se reindex karke minutes me ban jaata hai,
+#                   phir bhi commit hota hai: Vercel pe reindex nahi chala sakte
 TRANSCRIPT_DIR = DATA_DIR / "transcripts"
 AUDIO_DIR = DATA_DIR / "audio"
-QDRANT_PATH = DATA_DIR / "qdrant"
+
+# Vercel pe filesystem read-only hai, sirf /tmp likh sakte hain. Vercel khud
+# VERCEL=1 set karta hai (build + runtime dono pe) — wahi signal use karo.
+ON_VERCEL = os.getenv("VERCEL") == "1"
+# Jo files RUNTIME pe likhi jaati hain (qdrant lock, rewrite cache, model) woh yahan.
+WRITABLE_DIR = Path("/tmp/ytrag") if ON_VERCEL else DATA_DIR
+# Committed index (git me hai). Vercel pe read-only — wahan se /tmp me copy hota hai.
+QDRANT_SEED_PATH = DATA_DIR / "qdrant"
+# Jo folder Qdrant asal me kholta hai. Local pe dono same (data/qdrant).
+QDRANT_PATH = WRITABLE_DIR / "qdrant"
 # Note: original code import hote hi folders bana deta tha (side effect).
 # Hum nahi banayenge — jo function file likhega, woh khud mkdir karega.
 
@@ -55,8 +65,19 @@ LINK_REWIND_SECONDS = int(os.getenv("YTRAG_LINK_REWIND", "5"))
 # Original ka measurement (2933 chunks): bge-m3 (4.35 GB, 55 min index)
 # top-1 12/12 vs MiniLM (87 MB, 1.6 min) 11/12. 50x chhota, 30x tez,
 # sirf 1 sawaal ka farak — aur woh bhi rank 2 pe aa jaata hai.
-EMBED_MODEL = os.getenv("YTRAG_EMBED_MODEL", "all-MiniLM-L6-v2")
+#
+# Runtime: fastembed (ONNX), sentence-transformers nahi. Wajah: s-t torch
+# kheenchta hai, Linux pe torch + CUDA libs Vercel ke 500 MB Python bundle
+# limit se kaafi bade. fastembed WAHI model chalata hai (same weights, 384-dim,
+# 256-token truncation) onnxruntime pe, bina torch.
+# Measured (M9, golden set, rewrite cache same): s-t vs fastembed IDENTICAL —
+# hit@5 95%, top1 65%, MRR 0.77, refusal 100%. Reindex 2933 chunks: 115s CPU.
+EMBED_MODEL = os.getenv("YTRAG_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 EMBED_BATCH = int(os.getenv("YTRAG_EMBED_BATCH", "16"))
+# ONNX model file yahan download hoti hai (~90 MB, pehli baar). Vercel pe /tmp.
+MODEL_CACHE_DIR = WRITABLE_DIR / "models"
+# 0 / unset -> None -> onnxruntime khud decide kare (saare cores).
+EMBED_THREADS = int(os.getenv("YTRAG_EMBED_THREADS", "0")) or None
 # Kuch models ko QUERY ke aage ek instruction chahiye (sirf query, documents
 # nahi) — jaise bge-*-en-v1.5. MiniLM ko nahi. Model badlo toh model card padho:
 # galat prefix error nahi deta, bas chupchaap results kharab kar deta hai.

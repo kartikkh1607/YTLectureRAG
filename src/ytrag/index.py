@@ -7,6 +7,7 @@ Day14/15 jaisa hi client, par do farak jo scale pe matter karte hain:
 
 import atexit
 import re
+import shutil
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -22,8 +23,10 @@ from qdrant_client.models import (
 from ytrag.config import (
     COLLECTION,
     MAX_DISTANCE,
+    ON_VERCEL,
     QDRANT_API_KEY,
     QDRANT_PATH,
+    QDRANT_SEED_PATH,
     QDRANT_URL,
     QUERY_REWRITE,
     TITLE_BOOST,
@@ -47,6 +50,14 @@ def get_client() -> QdrantClient:
         if QDRANT_URL:
             _CLIENT = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY or None)
         else:
+            # Local Qdrant folder kholte hi .lock file likhta hai -> read-only
+            # filesystem (Vercel) pe crash. Isliye committed index ko pehle
+            # /tmp me copy karo (cold start pe ek baar, ~17 MB). Purani .lock
+            # copy mat karo — woh kisi aur process ki thi.
+            if ON_VERCEL and not QDRANT_PATH.exists():
+                shutil.copytree(
+                    QDRANT_SEED_PATH, QDRANT_PATH, ignore=shutil.ignore_patterns(".lock")
+                )
             QDRANT_PATH.mkdir(parents=True, exist_ok=True)
             try:
                 _CLIENT = QdrantClient(path=str(QDRANT_PATH))

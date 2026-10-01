@@ -19,7 +19,7 @@ import json
 import os
 import threading
 
-from ytrag.config import DATA_DIR, REWRITE_MODEL
+from ytrag.config import REWRITE_MODEL, WRITABLE_DIR
 
 REWRITE_PROMPT = """You convert a student's DSA question (Hinglish or English) into a short
 English search query for a lecture transcript index.
@@ -32,7 +32,8 @@ Rules:
 - If the question is not about DSA, just translate it to English. Do NOT
   turn it into a DSA question."""
 
-CACHE_PATH = DATA_DIR / "rewrite_cache.json"
+# WRITABLE_DIR: local pe data/, Vercel pe /tmp/ytrag (wahan baaki sab read-only).
+CACHE_PATH = WRITABLE_DIR / "rewrite_cache.json"
 
 # Cache key me model + prompt ka hash. Prompt ya model badla -> naya hash ->
 # purane rewrites apne aap ignore. (HireMeAI wala lesson: cache key me har

@@ -9,7 +9,7 @@ from rich.table import Table
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="YT Lecture RAG")
 console = Console()
 
-# Heavy imports (torch, qdrant) commands ke ANDAR hain, top pe nahi.
+# Heavy imports (fastembed/onnxruntime, qdrant) commands ke ANDAR hain, top pe nahi.
 # Isliye `ytrag --help` turant khulta hai, 10 sec model load ka wait nahi.
 
 
