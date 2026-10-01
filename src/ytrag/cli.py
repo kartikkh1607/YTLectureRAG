@@ -104,3 +104,31 @@ def stats():
     console.print(f"Collection   : {collection_name()}")
     console.print(f"Points       : {count_points()}")
     console.print(f"Videos       : {len(indexed_video_ids())} indexed / {len(cached_video_ids())} transcripts")
+
+    
+
+@app.command()
+def ask(
+    question: str = typer.Argument(..., help="Sawaal, Hinglish ya English"),
+    top_k: int = typer.Option(6, "--top-k", "-k"),
+):
+    """Grounded answer + clickable timestamps (Groq LLM)."""
+    from rich.markup import escape
+
+    from ytrag.answer import answer
+
+    result = answer(question, top_k=top_k)
+
+    color = "green" if result["grounded"] else "yellow"
+    # escape(): LLM ke text me "[bold]" jaisa kuch aaya toh rich use style samjhega.
+    # User/LLM text ko hamesha escape karke markup me daalo.
+    console.print(f"\n[{color}]{escape(result['answer'])}[/{color}]\n")
+
+    for i, c in enumerate(result["citations"], start=1):
+        console.print(f"  [{i}] [link={c['url']}]{c['timestamp']}[/link]  {c['title'][:60]}  (dist {c['distance']})")
+
+    # Debug line: retrieval ne kitna diya, model ne kitna use kiya
+    console.print(
+        f"\n[dim]retrieved {result['retrieved']} | cited {len(result['citations'])} "
+        f"| grounded {result['grounded']}[/dim]"
+    )

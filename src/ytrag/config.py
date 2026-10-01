@@ -93,3 +93,18 @@ CONFIDENT_DISTANCE = float(os.getenv("YTRAG_CONFIDENT_DISTANCE", "0.45"))
 # Query ka har meaningful word jo lecture TITLE me bhi hai -> distance me se
 # itna minus. Measured: top-1 accuracy 9/12 -> 12/12. 0 = band.
 TITLE_BOOST = float(os.getenv("YTRAG_TITLE_BOOST", "0.06"))
+
+
+# ------------------------------------------------------------------
+# LLM (Groq)
+# ------------------------------------------------------------------
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = os.getenv("YTRAG_GROQ_MODEL", "openai/gpt-oss-120b")
+# gpt-oss reasoning model hai: answer se pehle "sochne" ke tokens bhi isi
+# budget me se jaate hain. HireMeAI me yahi budget kam padne pe khaali
+# answer aaya tha. 4096 = reasoning + 4-6 line answer ke liye kaafi.
+GROQ_MAX_TOKENS = int(os.getenv("YTRAG_GROQ_MAX_TOKENS", "4096"))
+
+# Exact string jo system bolta hai jab answer lectures me nahi hai.
+# Ek jagah define — answer.py, eval aur frontend teeno isi se match karte hain.
+REFUSAL = "Ye topic in lectures me cover nahi hua."
