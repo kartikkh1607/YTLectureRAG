@@ -5,12 +5,20 @@ sakte" uske liye bhasha ka signal zyada hai, topic ka kam — toh woh Hinglish
 chunks se match karta hai, House Robber se nahi. Rewrite isko
 "house robber adjacent houses maximum sum dynamic programming" bana deta hai.
 
-Trade-off: search ab free/instant nahi — har query pe ek LLM call.
+Trade-off: search ab free/instant nahi — har NAYE sawaal pe ek LLM call.
+
+Disk cache (data/rewrite_cache.json) kyun:
+  1. Eval reproducible: temperature=0 bhi 100% deterministic nahi. Same sawaal
+     ka rewrite run-to-run badla toh downstream change (stemmer, boost) ka
+     asar noise me chhup jaata hai. Cache = upstream FREEZE.
+  2. Production: wahi sawaal dobara aaya -> 0 tokens, 0 latency.
 """
 
-from functools import lru_cache
+import hashlib
+import json
+import os
 
-from ytrag.config import REWRITE_MODEL
+from ytrag.config import DATA_DIR, REWRITE_MODEL
 
 REWRITE_PROMPT = """You convert a student's DSA question (Hinglish or English) into a short
 English search query for a lecture transcript index.
@@ -23,18 +31,39 @@ Rules:
 - If the question is not about DSA, just translate it to English. Do NOT
   turn it into a DSA question."""
 
+CACHE_PATH = DATA_DIR / "rewrite_cache.json"
 
-@lru_cache(maxsize=512)
-def rewrite_query(question: str) -> str:
-    """Rewritten query lautao. Kuch bhi fail ho -> original sawaal (search kabhi na toote).
+# Cache key me model + prompt ka hash. Prompt ya model badla -> naya hash ->
+# purane rewrites apne aap ignore. (HireMeAI wala lesson: cache key me har
+# woh cheez daalo jo output badal sakti hai.)
+_VERSION = hashlib.sha256((REWRITE_MODEL + "\n" + REWRITE_PROMPT).encode()).hexdigest()[:12]
 
-    lru_cache: same sawaal dobara aaye (eval me, ya CLI me display + search)
-    toh LLM call dobara nahi hogi. Pure function hai (same input -> same
-    output, temperature=0), isliye cache karna safe hai.
-    """
+_cache: dict[str, str] | None = None
+
+
+def _load() -> dict[str, str]:
+    """Pehli call pe disk se padho, phir memory me rakho."""
+    global _cache
+    if _cache is None:
+        try:
+            _cache = json.loads(CACHE_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            _cache = {}  # file nahi / kharab -> khaali se shuru, crash nahi
+    return _cache
+
+
+def _save(cache: dict[str, str]) -> None:
+    """Atomic write — transcribe.py wala same pattern (tmp + os.replace)."""
+    CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = CACHE_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.replace(tmp, CACHE_PATH)
+
+
+def _call_llm(question: str) -> str | None:
+    """LLM se rewrite. Fail ya bekaar output -> None."""
     # Lazy import: answer.py -> index.py -> rewrite.py chain hai. Top pe
     # `from ytrag.answer import ...` likhte toh CIRCULAR IMPORT hota.
-    # Function ke andar import call-time pe chalta hai, tab tak sab load ho chuka hota hai.
     from ytrag.answer import get_client
 
     try:
@@ -50,8 +79,27 @@ def rewrite_query(question: str) -> str:
         )
         text = (response.choices[0].message.content or "").strip()
     except Exception:
-        return question  # Groq down / quota khatam -> bina rewrite ke search
-    # Sanity: khaali ya bahut lamba (model ne explanation likh di) -> original
+        return None
+    # Sanity: khaali ya bahut lamba (model ne explanation likh di) -> bekaar
     if not text or len(text.split()) > 25:
-        return question
+        return None
     return text.splitlines()[0].strip().strip('"')
+
+
+def rewrite_query(question: str) -> str:
+    """Cached rewrite lautao; miss pe LLM; LLM fail -> original sawaal."""
+    question = question.strip()
+    key = f"{_VERSION}:{question}"
+    cache = _load()
+    if key in cache:
+        return cache[key]
+
+    result = _call_llm(question)
+    if result is None:
+        # FAILURE CACHE MAT KARO. Groq 2 min down tha aur humne "original
+        # sawaal" cache kar diya -> woh sawaal HAMESHA bina rewrite ke chalega.
+        return question
+
+    cache[key] = result
+    _save(cache)
+    return result

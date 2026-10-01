@@ -14,3 +14,4 @@ wheels/
 # disposable runtime data (regenerable)
 data/audio/
 data/qdrant/
+data/rewrite_cache.json

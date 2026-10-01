@@ -193,13 +193,24 @@ _STOP = {
 
 
 def _stem(word: str) -> str:
-    """Kaccha plural hataana: 'hashmaps' -> 'hashmap', 'heaps' -> 'heap'.
+    """Kaccha plural hataana, thoda kam kaccha.
 
-    len > 4 ki shart: 'bfs' ya 'dfs' ka 's' mat kaato.
+    'es' sirf tab kaato jab uske pehle ss/x/z/ch/sh ho (classes, boxes, matches).
+    Baaki jagah sirf 's' (houses -> house, cases -> case, heaps -> heap).
+    'ss' se khatam words (class, process) ko mat chhuo.
+    len <= 4: 'bfs', 'dfs', 'uses' jaise chhote words waise hi rahein.
+
+    Bug history (Exp2):
+      v1: har 'es' kaatta tha -> houses -> 'hous' (title ke 'house' se mismatch)
+      v2: 'es' kaatta tha agar pehle 's' ho -> 'hous' khud 's' pe khatam -> phir 'hous'
+      v3 (ye): 'ss' check -> houses -> house. Known edge case: buses -> 'buse'.
     """
-    for suffix in ("es", "s"):
-        if len(word) > 4 and word.endswith(suffix):
-            return word[: -len(suffix)]
+    if len(word) <= 4:
+        return word
+    if word.endswith("es") and word[:-2].endswith(("ss", "x", "z", "ch", "sh")):
+        return word[:-2]
+    if word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
     return word
 
 
