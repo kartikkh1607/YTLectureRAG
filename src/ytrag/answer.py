@@ -9,11 +9,20 @@ aur video me kuch aur chal raha hoga. "Cover nahi hua" bolna usse behtar hai.
 """
 
 import re
+from functools import lru_cache
 
 from groq import Groq
 
-from ytrag.config import GROQ_API_KEY, GROQ_MAX_TOKENS, GROQ_MODEL, REFUSAL, TOP_K
-from ytrag.index import search
+from ytrag.config import (
+    CONFIDENT_DISTANCE,
+    GROQ_API_KEY,
+    GROQ_MAX_TOKENS,
+    GROQ_MODEL,
+    QUERY_REWRITE,
+    REFUSAL,
+    TOP_K,
+)
+from ytrag.index import search, title_overlap
 from ytrag.models import Chunk
 
 SYSTEM_PROMPT = f"""You are answering using ONLY the transcript excerpts below, which come from
@@ -24,7 +33,7 @@ Rules:
 - Answer only from the excerpts. If they don't cover it, say exactly:
   "{REFUSAL}"
 - Cite with [1], [2] inline, using the excerpt numbers given below.
-- Match the language of the question (Hinglish question -> Hinglish answer).
+- Always answer in English, even if the question is in Hinglish.
 - 4-6 sentences max.
 - Never invent a timestamp or a lecture name."""
 
@@ -75,12 +84,28 @@ def build_context(chunks: list[Chunk]) -> str:
     return "\n\n".join(blocks)
 
 
+@lru_cache(maxsize=256)
+def video_duration(video_id: str) -> int:
+    """Lecture ki length (sec) — UI timeline ke liye. Transcript ka last segment end.
+
+    lru_cache: har search pe 6 JSON files padhna bekaar; video ki length badalti nahi.
+    """
+    from ytrag.transcribe import load_transcript
+
+    data = load_transcript(video_id)
+    if not data or not data.get("segments"):
+        return 0
+    return int(data["segments"][-1]["end"])
+
+
 def _citation(chunk: Chunk, distance: float) -> dict:
     return {
         "title": chunk.video_title,
         "timestamp": chunk.timestamp,
         "url": chunk.url,
         "start_sec": chunk.link_sec,
+        "end_sec": chunk.end_sec,
+        "duration": video_duration(chunk.video_id),
         "video_id": chunk.video_id,
         "distance": round(distance, 4),
     }
@@ -145,4 +170,54 @@ def answer(question: str, top_k: int = TOP_K, video_id: str | None = None) -> di
         "citations": citations,
         "grounded": bool(citations),
         "retrieved": len(hits),
+    }
+
+
+def search_only(question: str, top_k: int = TOP_K, video_id: str | None = None) -> dict:
+    """UI ka main path: ranked timestamps, answer-LLM ke bina.
+
+    Student ko paraphrase nahi, lecture ka woh second chahiye. Ye path
+    hallucinate kar hi nahi sakta — kuch generate nahi hota.
+    (Rewrite ON hai toh ek chhoti LLM call query ke liye lagti hai, bas.)
+
+    `confident` sirf advisory hai, gate nahi: weak results bhi dikhte hain,
+    bas UI unhe "shayad" bol ke dikhata hai.
+    """
+    question = question.strip()
+    if not question:
+        return {"query": question, "effective_query": question, "confident": False, "results": []}
+
+    effective = question
+    if QUERY_REWRITE:
+        from ytrag.rewrite import rewrite_query
+
+        effective = rewrite_query(question)  # cached; search() dobara call karega -> free
+
+    hits = search(question, top_k=top_k, video_id=video_id)
+
+    # Do signals: title me topic hai, YA distance kaafi kam hai.
+    # Sirf distance pe bharosa nahi — M5 me dekha, off-topic aur genuine overlap karte hain.
+    confident = bool(hits) and (
+        title_overlap(effective, hits[0][0].video_title) > 0
+        or hits[0][1] <= CONFIDENT_DISTANCE
+    )
+    return {
+        "query": question,
+        "effective_query": effective,
+        "confident": confident,
+        "results": [
+            {
+                "title": c.video_title,
+                "video_id": c.video_id,
+                "start_sec": c.link_sec,
+                "end_sec": c.end_sec,
+                "duration": video_duration(c.video_id),  # UI timeline: clip lecture me kahan hai
+                "timestamp": c.timestamp,
+                "url": c.url,
+                "distance": round(d, 4),
+                # chunk.text = "title\n\nbody" -> sirf body ka shuru
+                "preview": c.text.split("\n\n", 1)[-1][:220].strip(),
+            }
+            for c, d in hits
+        ],
     }

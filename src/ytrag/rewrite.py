@@ -17,6 +17,7 @@ Disk cache (data/rewrite_cache.json) kyun:
 import hashlib
 import json
 import os
+import threading
 
 from ytrag.config import DATA_DIR, REWRITE_MODEL
 
@@ -39,6 +40,11 @@ CACHE_PATH = DATA_DIR / "rewrite_cache.json"
 _VERSION = hashlib.sha256((REWRITE_MODEL + "\n" + REWRITE_PROMPT).encode()).hexdigest()[:12]
 
 _cache: dict[str, str] | None = None
+# FastAPI sync endpoints threadpool me chalte hain -> do requests ek saath
+# cache badal sakti hain. json.dumps chal raha ho aur doosra thread dict me
+# key daale -> "dictionary changed size during iteration". Lock se ek waqt
+# pe ek hi thread cache chhuega.
+_lock = threading.Lock()
 
 
 def _load() -> dict[str, str]:
@@ -90,16 +96,19 @@ def rewrite_query(question: str) -> str:
     """Cached rewrite lautao; miss pe LLM; LLM fail -> original sawaal."""
     question = question.strip()
     key = f"{_VERSION}:{question}"
-    cache = _load()
-    if key in cache:
-        return cache[key]
+    with _lock:
+        cache = _load()
+        if key in cache:
+            return cache[key]
 
+    # LLM call lock ke BAHAR — warna ek slow call baaki sab requests ko rok degi.
     result = _call_llm(question)
     if result is None:
         # FAILURE CACHE MAT KARO. Groq 2 min down tha aur humne "original
         # sawaal" cache kar diya -> woh sawaal HAMESHA bina rewrite ke chalega.
         return question
 
-    cache[key] = result
-    _save(cache)
+    with _lock:
+        cache[key] = result
+        _save(cache)
     return result

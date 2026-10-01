@@ -209,3 +209,17 @@ def eval_cmd(
     if "refusal" in s:
         m = s["refusal"]
         console.print(f"Refusal   ({m['n']}): {m['rate']:.0%}")
+
+
+
+@app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", help="0.0.0.0 = network pe sabke liye (deploy)"),
+    port: int = typer.Option(8000),
+):
+    """Web UI + API chalao."""
+    import uvicorn
+
+    # Local Qdrant single-process hai -> workers=1 hi. (Cloud Qdrant pe zyada ho sakte hain,
+    # par tab in-memory rate limiter har worker ka alag hoga — Redis chahiye.)
+    uvicorn.run("ytrag.api:app", host=host, port=port, workers=1)

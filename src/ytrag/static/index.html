@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lecture Finder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  /* Design idea: a student's highlighter on lecture notes.
+     Timestamps are "highlighted", and every result shows WHERE in the
+     lecture the clip sits, on a timeline bar. */
+  :root {
+    --paper: #f3f5f8;
+    --sheet: #ffffff;
+    --ink: #14213d;
+    --ink-soft: #55627a;
+    --rule: #d8dee8;
+    --highlight: #ffe45c;
+    --highlight-ink: #14213d;
+    --strong: #1f7a4d;
+    --weak: #9a6400;
+    --danger: #b42318;
+    --video-bg: #0d1424;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0e1626;
+      --sheet: #152036;
+      --ink: #e6ecf5;
+      --ink-soft: #9aa7bd;
+      --rule: #26334d;
+      --highlight: #f5d547;
+      --highlight-ink: #0e1626;
+      --strong: #5fd39a;
+      --weak: #f0b54a;
+      --danger: #ff8a7a;
+      --video-bg: #070c17;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 400 16px/1.55 "Schibsted Grotesk", system-ui, sans-serif;
+  }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid var(--highlight); outline-offset: 2px; border-radius: 6px; }
+
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 0 16px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* ---------- Hero: the question box is the hero ---------- */
+  header { padding: 40px 0 24px; }
+  h1 {
+    margin: 0;
+    max-width: 18ch;
+    font-size: clamp(28px, 3.8vw, 46px);
+    line-height: 1.04;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+  }
+  .library { margin: 12px 0 0; color: var(--ink-soft); max-width: 60ch; }
+
+  form {
+    margin-top: 28px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    max-width: 820px;
+  }
+  .q {
+    flex: 1 1 320px;
+    min-width: 0;
+    padding: 15px 18px;
+    font-size: 18px;
+    background: var(--sheet);
+    border: 2px solid var(--ink);
+    border-radius: 12px;
+  }
+  .q::placeholder { color: var(--ink-soft); }
+  .btn {
+    cursor: pointer;
+    padding: 0 22px;
+    min-height: 54px;
+    border-radius: 12px;
+    font-weight: 700;
+    border: 2px solid var(--ink);
+    background: var(--sheet);
+  }
+  .btn.find { background: var(--ink); color: var(--paper); }
+  .btn:disabled { opacity: .5; cursor: progress; }
+
+  .examples { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+  .examples span { color: var(--ink-soft); font-size: 14px; margin-right: 2px; }
+  .example {
+    cursor: pointer;
+    border: 1px solid var(--rule);
+    background: transparent;
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 14px;
+    color: var(--ink-soft);
+  }
+  .example:hover { color: var(--ink); border-color: var(--ink-soft); }
+
+  /* ---------- Main: results left, video right ---------- */
+  main {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: 32px;
+    padding-bottom: 56px;
+  }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; gap: 16px; }
+  }
+
+  .status { min-height: 24px; color: var(--ink-soft); font-size: 15px; margin-bottom: 12px; }
+  .status .rewritten { display: block; font-size: 14px; margin-top: 2px; }
+  .status .rewritten q { color: var(--ink); quotes: "“" "”"; }
+  .tag { font-weight: 700; margin-left: 8px; }
+  .tag.strong { color: var(--strong); }
+  .tag.weak { color: var(--weak); }
+  .error { color: var(--danger); }
+
+  .answer {
+    background: var(--sheet);
+    border-left: 4px solid var(--highlight);
+    padding: 16px 18px;
+    margin: 0 0 20px;
+    border-radius: 0 10px 10px 0;
+    max-width: 62ch;
+  }
+  .cite {
+    cursor: pointer;
+    border: 0;
+    padding: 0 5px;
+    margin: 0 1px;
+    border-radius: 4px;
+    background: var(--highlight);
+    color: var(--highlight-ink);
+    font-weight: 700;
+    font-size: 14px;
+  }
+
+  ol.results { list-style: none; margin: 0; padding: 0; }
+  .result {
+    cursor: pointer;
+    padding: 16px 10px 18px;
+    margin: 0 -10px;  /* hover background ko thodi saans, text apni jagah rahe */
+    border-top: 1px solid var(--rule);
+    border-radius: 8px;
+  }
+  .result:hover { background: color-mix(in srgb, var(--highlight) 8%, transparent); }
+  .result:hover .title { text-decoration: underline; text-underline-offset: 3px; }
+  .result:last-child { border-bottom: 1px solid var(--rule); }
+  .result-head { display: flex; gap: 14px; align-items: baseline; }
+
+  /* The signature: a timestamp that looks highlighted with a marker */
+  .stamp {
+    cursor: pointer;
+    flex: none;
+    border: 0;
+    padding: 2px 8px;
+    font-weight: 800;
+    font-size: 17px;
+    font-variant-numeric: tabular-nums;
+    color: var(--highlight-ink);  /* dark mode me bhi yellow pe dark text */
+    background:
+      linear-gradient(100deg, transparent 0 3%, var(--highlight) 5% 94%, transparent 97%)
+      no-repeat 0 60% / 100% 78%;
+  }
+  .result.playing { background: linear-gradient(90deg, color-mix(in srgb, var(--highlight) 14%, transparent), transparent 70%); }
+  .title { font-weight: 700; line-height: 1.3; }
+  .preview { margin: 6px 0 0; color: var(--ink-soft); font-size: 14.5px; max-width: 62ch; }
+
+  /* Where in the lecture is this clip? */
+  .timeline { margin-top: 10px; display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .track { position: relative; flex: 1; height: 6px; background: var(--rule); border-radius: 3px; }
+  .clip { position: absolute; top: -2px; bottom: -2px; min-width: 6px; background: var(--ink); border-radius: 3px; }
+
+  .stage { position: sticky; top: 16px; align-self: start; }
+  .screen {
+    aspect-ratio: 16 / 9;
+    background: var(--video-bg);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .screen > * { width: 100%; height: 100%; display: block; border: 0; }
+  .idle {
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    text-align: center;
+    color: #9aa7bd;
+  }
+  .idle strong { display: block; color: #e6ecf5; font-size: 18px; margin-bottom: 4px; }
+  .now { margin-top: 12px; min-height: 24px; color: var(--ink-soft); font-size: 15px; }
+  .now b { color: var(--ink); }
+
+  /* Ye block .stage/.now ke BAAD hona zaroori hai: same specificity pe jo rule
+     baad me aata hai wahi jeetta hai. Pehle rakha tha toh top:16px jeet gaya. */
+  @media (max-width: 900px) {
+    /* Phone: video upar chipka rahe jab results scroll ho — opaque background,
+       warna results uske peeche se dikhte hain. */
+    .stage { order: -1; top: 0; z-index: 2; background: var(--paper); padding: 8px 0 4px; }
+    .now { margin-top: 6px; font-size: 14px; }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .result.playing .stamp { animation: swipe .35s ease-out; }
+    @keyframes swipe { from { background-size: 0% 78%; } to { background-size: 100% 78%; } }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Ask a DSA question. Jump to the second it's explained.</h1>
+    <p class="library" id="library">Searches every lecture in Pratyush's DSA course. Ask in English or Hinglish.</p>
+
+    <form id="form">
+      <label for="q" class="sr-only">Your question</label>
+      <input id="q" class="q" type="text" maxlength="300" autocomplete="off" required
+             placeholder="How do I find the next greater element?">
+      <button class="btn find" type="submit" id="btnFind">Find</button>
+      <button class="btn" type="button" id="btnExplain" title="Writes a short answer from the lecture excerpts. Takes a few seconds.">Explain</button>
+    </form>
+
+    <div class="examples" id="examples">
+      <span>Try</span>
+      <button class="example" type="button">memoization vs tabulation</button>
+      <button class="example" type="button">paas paas wale ghar nahi loot sakte</button>
+      <button class="example" type="button">why does Dijkstra fail with negative weights</button>
+    </div>
+  </header>
+
+  <main>
+    <section aria-live="polite">
+      <div class="status" id="status"></div>
+      <div id="answer"></div>
+      <ol class="results" id="results"></ol>
+    </section>
+
+    <aside class="stage">
+      <div class="screen"><div id="player" class="idle"><div><strong>Pick a timestamp</strong>The lecture plays here, starting at that second.</div></div></div>
+      <div class="now" id="now"></div>
+    </aside>
+  </main>
+</div>
+
+<script>
+// ---------------------------------------------------------------
+// SECURITY: transcript and LLM text is UNTRUSTED. Never put it in
+// innerHTML — always textContent / createElement. (Same lesson as
+// escape() in cli.py; on the web a mistake here is XSS.)
+// ---------------------------------------------------------------
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+};
+const fmt = (s) => {
+  s = Math.max(0, Math.floor(s));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const mm = String(m).padStart(h ? 2 : 1, "0"), ss = String(sec).padStart(2, "0");
+  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+};
+
+// ---------------- YouTube player ----------------
+let player = null, currentVideo = null, apiReady = false, pending = null;
+
+window.onYouTubeIframeAPIReady = () => {
+  apiReady = true;
+  if (pending) { play(...pending); pending = null; }
+};
+
+function play(videoId, sec, title, timestamp, card) {
+  document.querySelectorAll(".result.playing").forEach((n) => n.classList.remove("playing"));
+  if (card) card.classList.add("playing");
+  $("now").replaceChildren(
+    document.createTextNode("Playing "), el("b", "", title || ""),
+    document.createTextNode(timestamp ? ` from ${timestamp}` : "")
+  );
+
+  if (!apiReady) { pending = [videoId, sec]; return; }  // API still loading
+  if (!player) {
+    // Create the player WITH the video; an empty player can drop the first seek.
+    player = new YT.Player("player", {
+      videoId, playerVars: { start: sec, autoplay: 1, rel: 0 },
+      events: { onReady: (e) => e.target.playVideo() },
+    });
+    currentVideo = videoId;
+    return;
+  }
+  if (videoId === currentVideo) {
+    player.seekTo(sec, true);          // same lecture: instant in-page seek
+    player.playVideo();
+  } else {
+    player.loadVideoById({ videoId, startSeconds: sec });
+    currentVideo = videoId;
+  }
+}
+
+// ---------------- API ----------------
+async function post(path, question) {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const d = data.detail;  // HTTPException -> string; validation error -> list
+    throw new Error(typeof d === "string" ? d : `Request failed (${res.status}). Try again.`);
+  }
+  return data;
+}
+
+function busy(on) {
+  $("btnFind").disabled = on;
+  $("btnExplain").disabled = on;
+}
+
+function status(...nodes) { $("status").replaceChildren(...nodes); }
+
+function timeline(r) {
+  if (!r.duration) return null;
+  const row = el("div", "timeline");
+  const track = el("div", "track");
+  const clip = el("div", "clip");
+  const start = Math.min(r.start_sec / r.duration, 1);
+  const width = Math.max(((r.end_sec ?? r.start_sec) - r.start_sec) / r.duration, 0);
+  clip.style.left = `${(start * 100).toFixed(2)}%`;
+  clip.style.width = `${(width * 100).toFixed(2)}%`;
+  track.append(clip);
+  track.setAttribute("aria-label", `Clip at ${fmt(r.start_sec)} of ${fmt(r.duration)}`);
+  row.append(el("span", "", "0:00"), track, el("span", "", fmt(r.duration)));
+  return row;
+}
+
+function renderResults(results) {
+  const list = $("results");
+  list.replaceChildren();
+  for (const r of results) {
+    const li = el("li", "result");
+    const head = el("div", "result-head");
+    const stamp = el("button", "stamp", r.timestamp);
+    stamp.setAttribute("aria-label", `Play ${r.title} from ${r.timestamp}`);
+    // Poora card clickable. Handler sirf <li> pe — stamp ka click bubble hoke
+    // yahin aata hai (stamp pe alag handler hota toh video do baar load hoti).
+    // Stamp <button> hi rehta hai taaki keyboard (Tab + Enter) se bhi chale.
+    li.onclick = () => {
+      if (window.getSelection().toString()) return;  // text select kar raha tha, click nahi
+      play(r.video_id, r.start_sec, r.title, r.timestamp, li);
+    };
+    head.append(stamp, el("div", "title", r.title));
+    li.append(head);
+    const t = timeline(r);
+    if (t) li.append(t);
+    if (r.preview) li.append(el("p", "preview", r.preview + "…"));
+    list.append(li);
+  }
+}
+
+async function doFind() {
+  const q = $("q").value.trim();
+  if (!q) return;
+  busy(true);
+  $("answer").replaceChildren();
+  status(document.createTextNode("Searching the lectures…"));
+  try {
+    const data = await post("/search", q);
+    if (!data.results.length) {
+      $("results").replaceChildren();
+      status(document.createTextNode("No lecture covers this. Try naming the problem or algorithm, like “house robber” or “Kadane”."));
+      return;
+    }
+    const line = el("span", "", `${data.results.length} moments found`);
+    const tag = el("span", "tag " + (data.confident ? "strong" : "weak"),
+                   data.confident ? "Strong match" : "Weak match, check the clip");
+    const nodes = [line, tag];
+    if (data.effective_query && data.effective_query !== data.query) {
+      const rw = el("span", "rewritten", "Searched as ");
+      rw.append(el("q", "", data.effective_query));
+      nodes.push(rw);
+    }
+    status(...nodes);
+    renderResults(data.results);
+  } catch (err) {
+    status(el("span", "error", err.message));
+  } finally {
+    busy(false);
+  }
+}
+
+async function doExplain() {
+  const q = $("q").value.trim();
+  if (!q) return;
+  busy(true);
+  $("results").replaceChildren();
+  $("answer").replaceChildren();
+  status(document.createTextNode("Reading the lecture excerpts…"));
+  try {
+    const data = await post("/ask", q);
+    status(el("span", "tag " + (data.grounded ? "strong" : "weak"),
+      data.grounded ? "Answered from the lectures" : "Not backed by a lecture clip"));
+    const box = el("div", "answer");
+    // Turn "[2]" into a button. split with a capture group -> ["text", "2", "text", ...]
+    data.answer.split(/\[(\d+)\]/).forEach((part, i) => {
+      if (i % 2 === 0) { box.append(document.createTextNode(part)); return; }
+      const c = data.citations[Number(part) - 1];
+      if (!c) return;
+      const b = el("button", "cite", part);
+      b.setAttribute("aria-label", `Play source ${part}: ${c.title} from ${c.timestamp}`);
+      b.onclick = () => play(c.video_id, c.start_sec, c.title, c.timestamp, null);
+      box.append(b);
+    });
+    $("answer").append(box);
+    renderResults(data.citations);
+  } catch (err) {
+    status(el("span", "error", err.message));
+  } finally {
+    busy(false);
+  }
+}
+
+$("form").addEventListener("submit", (e) => { e.preventDefault(); doFind(); });
+$("btnExplain").addEventListener("click", doExplain);
+document.querySelectorAll(".example").forEach((b) => b.addEventListener("click", () => {
+  $("q").value = b.textContent;
+  doFind();
+}));
+
+fetch("/stats").then((r) => r.json()).then((s) => {
+  if (s.lectures) {
+    $("library").textContent =
+      `Searches ${s.lectures} lectures (${s.hours} hours) of Pratyush's DSA course. Ask in English or Hinglish.`;
+  }
+}).catch(() => {});
+</script>
+<script src="https://www.youtube.com/iframe_api"></script>
+</body>
+</html>

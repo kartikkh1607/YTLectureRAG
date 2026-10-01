@@ -103,7 +103,7 @@ GROQ_MAX_TOKENS = int(os.getenv("YTRAG_GROQ_MAX_TOKENS", "4096"))
 
 # Exact string jo system bolta hai jab answer lectures me nahi hai.
 # Ek jagah define — answer.py, eval aur frontend teeno isi se match karte hain.
-REFUSAL = "Ye topic in lectures me cover nahi hua."
+REFUSAL = "This topic isn't covered in these lectures."
 
 # ------------------------------------------------------------------
 # Query rewriting
@@ -121,3 +121,16 @@ REFUSAL = "Ye topic in lectures me cover nahi hua."
 QUERY_REWRITE = os.getenv("YTRAG_QUERY_REWRITE", "1") == "1"
 # Chhota/tez model kaafi hai: ek line rewrite karni hai, sochna kam.
 REWRITE_MODEL = os.getenv("YTRAG_REWRITE_MODEL", "openai/gpt-oss-20b")
+
+
+# ------------------------------------------------------------------
+# API (M8)
+# ------------------------------------------------------------------
+MAX_QUESTION_CHARS = int(os.getenv("YTRAG_MAX_QUESTION_CHARS", "300"))
+# Per-IP: ek student itne requests per window.
+RATE_LIMIT_PER_IP = int(os.getenv("YTRAG_RATE_LIMIT_PER_IP", "20"))
+# GLOBAL backstop: sab users mila ke. HireMeAI lesson — per-IP limit
+# X-Forwarded-For spoof karke bypass ho jaata hai; global cap Groq quota
+# ko phir bhi bachata hai.
+RATE_LIMIT_GLOBAL = int(os.getenv("YTRAG_RATE_LIMIT_GLOBAL", "200"))
+RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("YTRAG_RATE_LIMIT_WINDOW", "60"))
