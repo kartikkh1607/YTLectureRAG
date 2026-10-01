@@ -47,3 +47,29 @@ MIN_CHUNK_WORDS = int(os.getenv("YTRAG_MIN_CHUNK_WORDS", "15"))
 # Retrieval answer wala chunk pakadta hai, par explanation aksar thoda
 # pehle shuru hota hai. Citation link 5 sec peeche se chalega.
 LINK_REWIND_SECONDS = int(os.getenv("YTRAG_LINK_REWIND", "5"))
+
+
+# ------------------------------------------------------------------
+# Embeddings
+# ------------------------------------------------------------------
+# all-MiniLM-L6-v2: 87 MB, 384-dim, CPU pe tez.
+# Original ka measurement (2933 chunks): bge-m3 (4.35 GB, 55 min index)
+# top-1 12/12 vs MiniLM (87 MB, 1.6 min) 11/12. 50x chhota, 30x tez,
+# sirf 1 sawaal ka farak — aur woh bhi rank 2 pe aa jaata hai.
+EMBED_MODEL = os.getenv("YTRAG_EMBED_MODEL", "all-MiniLM-L6-v2")
+EMBED_BATCH = int(os.getenv("YTRAG_EMBED_BATCH", "16"))
+# Kuch models ko QUERY ke aage ek instruction chahiye (sirf query, documents
+# nahi) — jaise bge-*-en-v1.5. MiniLM ko nahi. Model badlo toh model card padho:
+# galat prefix error nahi deta, bas chupchaap results kharab kar deta hai.
+EMBED_QUERY_PREFIX = os.getenv("YTRAG_EMBED_QUERY_PREFIX", "")
+
+# ------------------------------------------------------------------
+# Vector store (Qdrant)
+# ------------------------------------------------------------------
+# QDRANT_URL khaali -> local folder mode (data/qdrant), koi account nahi.
+# Set karo -> Qdrant Cloud (deploy ke time).
+QDRANT_URL = os.getenv("QDRANT_URL", "")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
+# Final naam me embedding dim juddega: "dsa_lectures_384"
+COLLECTION = os.getenv("YTRAG_COLLECTION", "dsa_lectures")
+UPSERT_BATCH = int(os.getenv("YTRAG_UPSERT_BATCH", "128"))
