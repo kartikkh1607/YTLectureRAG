@@ -7,9 +7,11 @@ import numpy as np
 from ytrag.config import (
     EMBED_BATCH,
     EMBED_MODEL,
+    EMBED_MODEL_DIR,
     EMBED_QUERY_PREFIX,
     EMBED_THREADS,
     MODEL_CACHE_DIR,
+    ON_VERCEL,
 )
 
 
@@ -70,12 +72,22 @@ class FastEmbedEmbedder:
         self.name = model_name
         self.dim = int(meta["dim"])
         self.batch_size = batch_size
-        # Download yahan hoga. Vercel pe default HF cache (~/.cache) read-only hai.
+        # Bundled folder (git me) -> specific_model_path: fastembed koi download
+        # try hi nahi karta, huggingface_hub ko chhoota bhi nahi.
+        bundled = EMBED_MODEL_DIR if model_name == EMBED_MODEL else None
+        if bundled is not None and not (bundled / "model.onnx").is_file():
+            if ON_VERCEL:
+                raise RuntimeError(
+                    f"Bundled model missing at {bundled}. Run scripts/bundle_model.py "
+                    "and commit models/ — Vercel never downloads models at runtime."
+                )
+            bundled = None  # local: HF se download, MODEL_CACHE_DIR me
         MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
         self.model = TextEmbedding(
             model_name=model_name,
-            cache_dir=str(MODEL_CACHE_DIR),  # pehli baar HF se ~90 MB download
+            cache_dir=str(MODEL_CACHE_DIR),
             threads=threads,
+            specific_model_path=str(bundled) if bundled else None,
         )
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:

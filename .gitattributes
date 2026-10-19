@@ -1,0 +1,2 @@
+# Bundled ONNX model: byte-exact, kabhi line-ending conversion nahi.
+models/** -text

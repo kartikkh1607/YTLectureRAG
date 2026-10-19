@@ -48,7 +48,7 @@ Requires [uv](https://docs.astral.sh/uv/) and a [Groq](https://console.groq.com/
 ```bash
 uv sync
 echo GROQ_API_KEY=your_key_here > .env
-uv run ytrag reindex     # embeds the committed transcripts (first run downloads the ~90 MB model)
+uv run ytrag reindex     # embeds the committed transcripts with the bundled model in models/
 uv run ytrag serve       # http://127.0.0.1:8000
 ```
 
@@ -59,5 +59,23 @@ Other commands: `uv run ytrag search "..."`, `uv run ytrag ask "..."`,
 
 Runs on Vercel (Python, zero-config FastAPI via the root `app.py`). The Qdrant
 index is committed; on Vercel's read-only filesystem it is copied to `/tmp` on
-cold start, and the ONNX model is downloaded to `/tmp`. Set `GROQ_API_KEY` in the
-project's environment variables.
+cold start. The ONNX model is committed in `models/` and loaded read-only, so
+nothing is downloaded from Hugging Face at runtime (`scripts/bundle_model.py`
+regenerates it if the model changes). Set `GROQ_API_KEY` in the project's
+environment variables. `/health` returns 503 and names the failed component if
+startup goes wrong.
+
+### Incident: demo down on Vercel (Oct 2026)
+
+**Symptom:** every route returned 500.
+**Root cause:** on startup, fastembed downloaded the model through hf-xet, which
+writes its cache under `HF_HOME` (`~/.cache`, read-only on Vercel). The GCS
+fallback also failed, so startup crashed.
+**Fix:** first, `HF_HOME`/`HF_XET_CACHE` under `/tmp` and a non-fatal startup with
+an honest `/health`; then the ONNX model shipped in the bundle, so there is no
+Hugging Face call at runtime.
+**Proof:** offline boot with `VERCEL=1` and Hugging Face + GCS blocked was healthy
+with zero attempts to those hosts; a control run without the bundled model hit
+the block. Eval unchanged: hit@5 95%, MRR 0.77, refusal 100%.
+**Remaining dependency:** the bundle (313 MB) exceeds Vercel's standard size, so
+Python packages are installed from PyPI on each cold start.

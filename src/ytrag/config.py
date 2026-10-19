@@ -36,6 +36,13 @@ AUDIO_DIR = DATA_DIR / "audio"
 ON_VERCEL = os.getenv("VERCEL") == "1"
 # Jo files RUNTIME pe likhi jaati hain (qdrant lock, rewrite cache, model) woh yahan.
 WRITABLE_DIR = Path("/tmp/ytrag") if ON_VERCEL else DATA_DIR
+# huggingface_hub (fastembed ke andar) import hote hi HF_HOME padh leta hai, aur
+# hf-xet apna cache/logs HF_HOME/xet me likhta hai. Default ~/.cache Vercel pe
+# read-only -> "Read-only file system (os error 30)" -> startup crash.
+# Isliye ye config me hai: huggingface_hub/fastembed se PEHLE import hona zaroori.
+if ON_VERCEL:
+    os.environ.setdefault("HF_HOME", str(WRITABLE_DIR / "hf"))
+    os.environ.setdefault("HF_XET_CACHE", str(WRITABLE_DIR / "hf" / "xet"))
 # Committed index (git me hai). Vercel pe read-only — wahan se /tmp me copy hota hai.
 QDRANT_SEED_PATH = DATA_DIR / "qdrant"
 # Jo folder Qdrant asal me kholta hai. Local pe dono same (data/qdrant).
@@ -74,7 +81,14 @@ LINK_REWIND_SECONDS = int(os.getenv("YTRAG_LINK_REWIND", "5"))
 # hit@5 95%, top1 65%, MRR 0.77, refusal 100%. Reindex 2933 chunks: 115s CPU.
 EMBED_MODEL = os.getenv("YTRAG_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 EMBED_BATCH = int(os.getenv("YTRAG_EMBED_BATCH", "16"))
-# ONNX model file yahan download hoti hai (~90 MB, pehli baar). Vercel pe /tmp.
+# Bundled model: ONNX + tokenizer files git me committed (scripts/bundle_model.py).
+# Ye folder hai toh fastembed seedha yahin se padhta hai, read-only, bina network.
+# Vercel pe ye ZAROORI hai — wahan HF/GCS download pe bharosa nahi (cold start crash).
+EMBED_MODEL_DIR = Path(
+    os.getenv("YTRAG_EMBED_MODEL_DIR", PROJECT_ROOT / "models" / EMBED_MODEL.replace("/", "--"))
+)
+# Bundled folder na ho (sirf local, naya model try karte waqt) toh download yahan.
+# fastembed ise mkdir bhi karta hai, isliye writable chahiye — Vercel pe /tmp.
 MODEL_CACHE_DIR = WRITABLE_DIR / "models"
 # 0 / unset -> None -> onnxruntime khud decide kare (saare cores).
 EMBED_THREADS = int(os.getenv("YTRAG_EMBED_THREADS", "0")) or None

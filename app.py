@@ -10,4 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
+# config pehle: Vercel pe HF_HOME /tmp pe set karta hai, fastembed/huggingface_hub
+# import hone se pehle (woh import ke time hi path padh lete hain).
+import ytrag.config  # noqa: E402,F401
 from ytrag.api import app  # noqa: E402,F401
