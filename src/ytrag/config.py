@@ -81,7 +81,14 @@ LINK_REWIND_SECONDS = int(os.getenv("YTRAG_LINK_REWIND", "5"))
 # hit@5 95%, top1 65%, MRR 0.77, refusal 100%. Reindex 2933 chunks: 115s CPU.
 EMBED_MODEL = os.getenv("YTRAG_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 EMBED_BATCH = int(os.getenv("YTRAG_EMBED_BATCH", "16"))
-# ONNX model file yahan download hoti hai (~90 MB, pehli baar). Vercel pe /tmp.
+# Bundled model: ONNX + tokenizer files git me committed (scripts/bundle_model.py).
+# Ye folder hai toh fastembed seedha yahin se padhta hai, read-only, bina network.
+# Vercel pe ye ZAROORI hai — wahan HF/GCS download pe bharosa nahi (cold start crash).
+EMBED_MODEL_DIR = Path(
+    os.getenv("YTRAG_EMBED_MODEL_DIR", PROJECT_ROOT / "models" / EMBED_MODEL.replace("/", "--"))
+)
+# Bundled folder na ho (sirf local, naya model try karte waqt) toh download yahan.
+# fastembed ise mkdir bhi karta hai, isliye writable chahiye — Vercel pe /tmp.
 MODEL_CACHE_DIR = WRITABLE_DIR / "models"
 # 0 / unset -> None -> onnxruntime khud decide kare (saare cores).
 EMBED_THREADS = int(os.getenv("YTRAG_EMBED_THREADS", "0")) or None
