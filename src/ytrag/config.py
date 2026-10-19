@@ -36,6 +36,13 @@ AUDIO_DIR = DATA_DIR / "audio"
 ON_VERCEL = os.getenv("VERCEL") == "1"
 # Jo files RUNTIME pe likhi jaati hain (qdrant lock, rewrite cache, model) woh yahan.
 WRITABLE_DIR = Path("/tmp/ytrag") if ON_VERCEL else DATA_DIR
+# huggingface_hub (fastembed ke andar) import hote hi HF_HOME padh leta hai, aur
+# hf-xet apna cache/logs HF_HOME/xet me likhta hai. Default ~/.cache Vercel pe
+# read-only -> "Read-only file system (os error 30)" -> startup crash.
+# Isliye ye config me hai: huggingface_hub/fastembed se PEHLE import hona zaroori.
+if ON_VERCEL:
+    os.environ.setdefault("HF_HOME", str(WRITABLE_DIR / "hf"))
+    os.environ.setdefault("HF_XET_CACHE", str(WRITABLE_DIR / "hf" / "xet"))
 # Committed index (git me hai). Vercel pe read-only — wahan se /tmp me copy hota hai.
 QDRANT_SEED_PATH = DATA_DIR / "qdrant"
 # Jo folder Qdrant asal me kholta hai. Local pe dono same (data/qdrant).
